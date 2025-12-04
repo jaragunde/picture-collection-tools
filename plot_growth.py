@@ -73,10 +73,14 @@ def main():
         # Convert bytes to MB for better readability
         cumulative_sizes_mb = [size / (1024 * 1024) for size in cumulative_sizes]
 
+        # Calculate monthly sizes in MB
+        monthly_sizes_mb = [monthly_growth[month] / (1024 * 1024) for month in sorted_months]
+
         # Plotting
         try:
             import matplotlib.pyplot as plt
             
+            # Chart 1: Cumulative Growth
             plt.figure(figsize=(12, 6))
             plt.bar(sorted_months, cumulative_sizes_mb, color='skyblue')
             
@@ -89,10 +93,29 @@ def main():
             output_path = os.path.join(target_dir, "collection_growth.png")
             plt.savefig(output_path)
             print(f"Chart saved to: {output_path}")
+
+            # Chart 2: Monthly Size
+            plt.figure(figsize=(12, 6))
+            plt.bar(sorted_months, monthly_sizes_mb, color='lightgreen')
+
+            plt.xlabel("Month")
+            plt.ylabel("Monthly Size (MB)")
+            plt.title("Monthly Picture Collection Size")
+            plt.xticks(rotation=45, ha='right')
+            plt.tight_layout()
+
+            output_path_monthly = os.path.join(target_dir, "collection_monthly_size.png")
+            plt.savefig(output_path_monthly)
+            print(f"Chart saved to: {output_path_monthly}")
+
         except ImportError:
             print("matplotlib not installed. Skipping chart generation.")
-            print("Data that would be plotted:")
+            print("Data that would be plotted (Cumulative):")
             for month, size in zip(sorted_months, cumulative_sizes_mb):
+                print(f"{month}: {size:.2f} MB")
+
+            print("\nData that would be plotted (Monthly):")
+            for month, size in zip(sorted_months, monthly_sizes_mb):
                 print(f"{month}: {size:.2f} MB")
 
     except sqlite3.Error as e:
