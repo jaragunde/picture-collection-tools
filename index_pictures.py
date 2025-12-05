@@ -73,6 +73,11 @@ def main():
             )
         """)
         
+        # Get existing files from DB
+        cursor.execute("SELECT file_path FROM pictures")
+        existing_files = set(row[0] for row in cursor.fetchall())
+        found_files = set()
+
         image_extensions = {'.jpg', '.jpeg', '.png', '.tiff', '.bmp', '.gif', '.webp'}
         
         count = 0
@@ -80,6 +85,7 @@ def main():
             for file in files:
                 if file.lower().endswith(tuple(image_extensions)):
                     full_path = os.path.join(root, file)
+                    found_files.add(full_path)
                     
                     # Get file size
                     try:
@@ -103,6 +109,17 @@ def main():
         conn.commit()
         print(f"Done. Indexed {count} pictures.")
         
+        # Prune deleted files
+        deleted_files = existing_files - found_files
+        if deleted_files:
+            print(f"Found {len(deleted_files)} deleted files. Removing from database...")
+            for file_path in deleted_files:
+                cursor.execute("DELETE FROM pictures WHERE file_path = ?", (file_path,))
+            conn.commit()
+            print(f"Removed {len(deleted_files)} entries.")
+        else:
+            print("No deleted files found.")
+
     except sqlite3.Error as e:
         print(f"SQLite error: {e}")
     finally:
