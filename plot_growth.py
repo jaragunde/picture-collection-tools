@@ -61,7 +61,7 @@ def main():
         cursor = conn.cursor()
 
         # Query data
-        cursor.execute("SELECT date_taken, file_size FROM pictures WHERE date_taken IS NOT NULL")
+        cursor.execute("SELECT date_taken, file_size, file_path FROM pictures WHERE date_taken IS NOT NULL")
         rows = cursor.fetchall()
         
         if not rows:
@@ -70,7 +70,9 @@ def main():
             return
 
         # Process data
+        # Structure: growth_data[time_key][directory] = size
         growth_data = {}
+        all_directories = set()
         
         date_before_dt = None
         if args.date_before:
@@ -90,83 +92,116 @@ def main():
                 conn.close()
                 sys.exit(1)
 
-        for date_str, size in rows:
+        for date_str, size, file_path in rows:
             dt = parse_date(date_str)
             if dt:
                 if date_before_dt and dt >= date_before_dt:
                     continue
                 if date_after_dt and dt <= date_after_dt:
                     continue
+
                 if args.group_by == "year":
                     key = dt.strftime("%Y")
                 else:
                     key = dt.strftime("%Y-%m")
-                growth_data[key] = growth_data.get(key, 0) + size
-        
+
+                # Get directory name relative to target_dir
+                # If file_path is absolute and inside target_dir, relpath works.
+                # If file_path is absolute but somehow not inside (symlinks?), might be weird.
+                # Assuming standard usage where indexer stores absolute paths.
+                try:
+                    rel_dir = os.path.relpath(os.path.dirname(file_path), target_dir)
+                    if rel_dir == ".":
+                        directory = "Root"
+                    else:
+                        directory = rel_dir
+                except ValueError:
+                    # Fallback if paths are on different drives or something
+                    directory = os.path.basename(os.path.dirname(file_path))
+
+                if key not in growth_data:
+                    growth_data[key] = {}
+
+                growth_data[key][directory] = growth_data[key].get(directory, 0) + size
+                all_directories.add(directory)
+
         if not growth_data:
-            print("Could not parse any dates.")
+            print("Could not parse any dates or no data after filtering.")
             conn.close()
             return
 
         # Sort by key (month or year)
         sorted_keys = sorted(growth_data.keys())
-        
-        # Calculate cumulative size
-        cumulative_sizes = []
-        current_total = 0
-        for key in sorted_keys:
-            current_total += growth_data[key]
-            cumulative_sizes.append(current_total)
-            
-        # Convert bytes to MB for better readability
-        cumulative_sizes_mb = [size / (1024 * 1024) for size in cumulative_sizes]
+        sorted_directories = sorted(list(all_directories))
 
-        # Calculate periodic sizes in MB
-        periodic_sizes_mb = [growth_data[key] / (1024 * 1024) for key in sorted_keys]
+        # Prepare data for plotting
+        # We need a list of sizes for each directory, aligned with sorted_keys
+
+        # For periodic (monthly/yearly) chart:
+        periodic_data = {d: [] for d in sorted_directories}
+        for key in sorted_keys:
+            for d in sorted_directories:
+                size = growth_data[key].get(d, 0)
+                periodic_data[d].append(size / (1024 * 1024)) # MB
+
+        # For cumulative chart:
+        # We need to accumulate sizes per directory over time
+        cumulative_data = {d: [] for d in sorted_directories}
+        current_totals = {d: 0 for d in sorted_directories}
+
+        for key in sorted_keys:
+            for d in sorted_directories:
+                size = growth_data[key].get(d, 0)
+                current_totals[d] += size
+                cumulative_data[d].append(current_totals[d] / (1024 * 1024)) # MB
 
         # Plotting
         try:
             import matplotlib.pyplot as plt
+            import numpy as np
 
             label = "Year" if args.group_by == "year" else "Month"
 
+            # Helper to plot stacked bars
+            def plot_stacked(data_dict, title, ylabel, filename):
+                plt.figure(figsize=(12, 6))
+
+                bottom = np.zeros(len(sorted_keys))
+
+                for d in sorted_directories:
+                    values = data_dict[d]
+                    plt.bar(sorted_keys, values, bottom=bottom, label=d)
+                    bottom += np.array(values)
+
+                plt.xlabel(label)
+                plt.ylabel(ylabel)
+                plt.title(title)
+                plt.xticks(rotation=45, ha='right')
+                plt.legend(title="Directory", bbox_to_anchor=(1.05, 1), loc='upper left')
+                plt.tight_layout()
+
+                output_path = os.path.join(target_dir, filename)
+                plt.savefig(output_path)
+                print(f"Chart saved to: {output_path}")
+
             # Chart 1: Cumulative Growth
-            plt.figure(figsize=(12, 6))
-            plt.bar(sorted_keys, cumulative_sizes_mb, color='skyblue')
-            
-            plt.xlabel(label)
-            plt.ylabel("Collection Size (MB)")
-            plt.title("Picture Collection Growth Over Time")
-            plt.xticks(rotation=45, ha='right')
-            plt.tight_layout()
-            
-            output_path = os.path.join(target_dir, "collection_growth.png")
-            plt.savefig(output_path)
-            print(f"Chart saved to: {output_path}")
+            plot_stacked(cumulative_data, "Picture Collection Growth Over Time", "Collection Size (MB)", "collection_growth.png")
 
             # Chart 2: Periodic Size
-            plt.figure(figsize=(12, 6))
-            plt.bar(sorted_keys, periodic_sizes_mb, color='lightgreen')
-
-            plt.xlabel(label)
-            plt.ylabel(f"{label}ly Size (MB)")
-            plt.title(f"{label}ly Picture Collection Size")
-            plt.xticks(rotation=45, ha='right')
-            plt.tight_layout()
-
-            output_path_periodic = os.path.join(target_dir, "collection_monthly_size.png")
-            plt.savefig(output_path_periodic)
-            print(f"Chart saved to: {output_path_periodic}")
+            plot_stacked(periodic_data, f"{label}ly Picture Collection Size", f"{label}ly Size (MB)", "collection_monthly_size.png")
 
         except ImportError:
             print("matplotlib not installed. Skipping chart generation.")
-            print("Data that would be plotted (Cumulative):")
-            for key, size in zip(sorted_keys, cumulative_sizes_mb):
-                print(f"{key}: {size:.2f} MB")
+            # Fallback print - simplified to just totals for now to avoid spamming too much
+            print("Data that would be plotted (Cumulative Totals):")
+            for i, key in enumerate(sorted_keys):
+                total = sum(cumulative_data[d][i] for d in sorted_directories)
+                print(f"{key}: {total:.2f} MB")
 
-            print(f"\nData that would be plotted ({'Yearly' if args.group_by == 'year' else 'Monthly'}):")
-            for key, size in zip(sorted_keys, periodic_sizes_mb):
-                print(f"{key}: {size:.2f} MB")
+            print(f"\nData that would be plotted ({'Yearly' if args.group_by == 'year' else 'Monthly'} Totals):")
+            for i, key in enumerate(sorted_keys):
+                total = sum(periodic_data[d][i] for d in sorted_directories)
+                print(f"{key}: {total:.2f} MB")
 
     except sqlite3.Error as e:
         print(f"SQLite error: {e}")
