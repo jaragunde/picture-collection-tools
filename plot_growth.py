@@ -46,6 +46,7 @@ def main():
     parser.add_argument("directory", help="Path to the directory containing .collection.db")
     parser.add_argument("--group-by", choices=["month", "year"], default="month", help="Group pictures by 'month' or 'year'")
     parser.add_argument("--date-before", help="Filter pictures taken before this date (YYYY-MM-DD)")
+    parser.add_argument("--date-after", help="Filter pictures taken after this date (YYYY-MM-DD)")
     args = parser.parse_args()
 
     target_dir = os.path.abspath(args.directory)
@@ -80,10 +81,21 @@ def main():
                 conn.close()
                 sys.exit(1)
 
+        date_after_dt = None
+        if args.date_after:
+            try:
+                date_after_dt = datetime.strptime(args.date_after, "%Y-%m-%d")
+            except ValueError:
+                print(f"Error: Invalid date format for --date-after: {args.date_after}. Use YYYY-MM-DD.")
+                conn.close()
+                sys.exit(1)
+
         for date_str, size in rows:
             dt = parse_date(date_str)
             if dt:
                 if date_before_dt and dt >= date_before_dt:
+                    continue
+                if date_after_dt and dt <= date_after_dt:
                     continue
                 if args.group_by == "year":
                     key = dt.strftime("%Y")
