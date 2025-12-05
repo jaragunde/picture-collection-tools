@@ -44,6 +44,7 @@ def parse_date(date_str):
 def main():
     parser = argparse.ArgumentParser(description="Generate a chart of picture collection growth over time.")
     parser.add_argument("directory", help="Path to the directory containing .collection.db")
+    parser.add_argument("--group-by", choices=["month", "year"], default="month", help="Group pictures by 'month' or 'year'")
     args = parser.parse_args()
 
     target_dir = os.path.abspath(args.directory)
@@ -67,44 +68,49 @@ def main():
             return
 
         # Process data
-        monthly_growth = {}
+        growth_data = {}
         
         for date_str, size in rows:
             dt = parse_date(date_str)
             if dt:
-                month_key = dt.strftime("%Y-%m")
-                monthly_growth[month_key] = monthly_growth.get(month_key, 0) + size
+                if args.group_by == "year":
+                    key = dt.strftime("%Y")
+                else:
+                    key = dt.strftime("%Y-%m")
+                growth_data[key] = growth_data.get(key, 0) + size
         
-        if not monthly_growth:
+        if not growth_data:
             print("Could not parse any dates.")
             conn.close()
             return
 
-        # Sort by month
-        sorted_months = sorted(monthly_growth.keys())
+        # Sort by key (month or year)
+        sorted_keys = sorted(growth_data.keys())
         
         # Calculate cumulative size
         cumulative_sizes = []
         current_total = 0
-        for month in sorted_months:
-            current_total += monthly_growth[month]
+        for key in sorted_keys:
+            current_total += growth_data[key]
             cumulative_sizes.append(current_total)
             
         # Convert bytes to MB for better readability
         cumulative_sizes_mb = [size / (1024 * 1024) for size in cumulative_sizes]
 
-        # Calculate monthly sizes in MB
-        monthly_sizes_mb = [monthly_growth[month] / (1024 * 1024) for month in sorted_months]
+        # Calculate periodic sizes in MB
+        periodic_sizes_mb = [growth_data[key] / (1024 * 1024) for key in sorted_keys]
 
         # Plotting
         try:
             import matplotlib.pyplot as plt
-            
+
+            label = "Year" if args.group_by == "year" else "Month"
+
             # Chart 1: Cumulative Growth
             plt.figure(figsize=(12, 6))
-            plt.bar(sorted_months, cumulative_sizes_mb, color='skyblue')
+            plt.bar(sorted_keys, cumulative_sizes_mb, color='skyblue')
             
-            plt.xlabel("Month")
+            plt.xlabel(label)
             plt.ylabel("Collection Size (MB)")
             plt.title("Picture Collection Growth Over Time")
             plt.xticks(rotation=45, ha='right')
@@ -114,29 +120,29 @@ def main():
             plt.savefig(output_path)
             print(f"Chart saved to: {output_path}")
 
-            # Chart 2: Monthly Size
+            # Chart 2: Periodic Size
             plt.figure(figsize=(12, 6))
-            plt.bar(sorted_months, monthly_sizes_mb, color='lightgreen')
+            plt.bar(sorted_keys, periodic_sizes_mb, color='lightgreen')
 
-            plt.xlabel("Month")
-            plt.ylabel("Monthly Size (MB)")
-            plt.title("Monthly Picture Collection Size")
+            plt.xlabel(label)
+            plt.ylabel(f"{label}ly Size (MB)")
+            plt.title(f"{label}ly Picture Collection Size")
             plt.xticks(rotation=45, ha='right')
             plt.tight_layout()
 
-            output_path_monthly = os.path.join(target_dir, "collection_monthly_size.png")
-            plt.savefig(output_path_monthly)
-            print(f"Chart saved to: {output_path_monthly}")
+            output_path_periodic = os.path.join(target_dir, "collection_monthly_size.png")
+            plt.savefig(output_path_periodic)
+            print(f"Chart saved to: {output_path_periodic}")
 
         except ImportError:
             print("matplotlib not installed. Skipping chart generation.")
             print("Data that would be plotted (Cumulative):")
-            for month, size in zip(sorted_months, cumulative_sizes_mb):
-                print(f"{month}: {size:.2f} MB")
+            for key, size in zip(sorted_keys, cumulative_sizes_mb):
+                print(f"{key}: {size:.2f} MB")
 
-            print("\nData that would be plotted (Monthly):")
-            for month, size in zip(sorted_months, monthly_sizes_mb):
-                print(f"{month}: {size:.2f} MB")
+            print(f"\nData that would be plotted ({'Yearly' if args.group_by == 'year' else 'Monthly'}):")
+            for key, size in zip(sorted_keys, periodic_sizes_mb):
+                print(f"{key}: {size:.2f} MB")
 
     except sqlite3.Error as e:
         print(f"SQLite error: {e}")
