@@ -64,7 +64,7 @@ def main():
         # Query data
         cursor.execute("SELECT date_taken, file_size, file_path FROM pictures WHERE date_taken IS NOT NULL")
         rows = cursor.fetchall()
-        
+
         if not rows:
             print("No pictures with date information found in the database.")
             conn.close()
@@ -74,7 +74,7 @@ def main():
         # Structure: growth_data[time_key][directory] = size
         growth_data = {}
         all_directories = set()
-        
+
         date_before_dt = None
         if args.date_before:
             try:

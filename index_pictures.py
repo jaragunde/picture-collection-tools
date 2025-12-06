@@ -35,13 +35,13 @@ def get_date_taken(path):
             exif = img.getexif()
             if not exif:
                 return None
-            
+
             # Look for DateTimeOriginal (36867) or DateTime (306)
             if 36867 in exif:
                 return exif[36867]
             elif 306 in exif:
                 return exif[306]
-                
+
             return None
     except Exception:
         return None
@@ -52,7 +52,7 @@ def main():
     args = parser.parse_args()
 
     target_dir = os.path.abspath(args.directory)
-    
+
     if not os.path.isdir(target_dir):
         print(f"Error: Directory '{target_dir}' does not exist.")
         sys.exit(1)
@@ -72,31 +72,31 @@ def main():
                 date_taken TEXT
             )
         """)
-        
+
         # Get existing files from DB
         cursor.execute("SELECT file_path FROM pictures")
         existing_files = set(row[0] for row in cursor.fetchall())
         found_files = set()
 
         image_extensions = {'.jpg', '.jpeg', '.png', '.tiff', '.bmp', '.gif', '.webp'}
-        
+
         count = 0
         for root, dirs, files in os.walk(target_dir):
             for file in files:
                 if file.lower().endswith(tuple(image_extensions)):
                     full_path = os.path.join(root, file)
                     found_files.add(full_path)
-                    
+
                     # Get file size
                     try:
                         file_size = os.path.getsize(full_path)
                     except OSError:
                         print(f"Could not read size for {full_path}")
                         continue
-                        
+
                     # Get date taken
                     date_taken = get_date_taken(full_path)
-                    
+
                     cursor.execute(
                         "INSERT OR REPLACE INTO pictures (file_path, file_size, date_taken) VALUES (?, ?, ?)",
                         (full_path, file_size, date_taken)
@@ -108,7 +108,7 @@ def main():
 
         conn.commit()
         print(f"Done. Indexed {count} pictures.")
-        
+
         # Prune deleted files
         deleted_files = existing_files - found_files
         if deleted_files:
