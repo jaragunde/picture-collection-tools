@@ -46,8 +46,46 @@ def get_date_taken(path):
     except Exception:
         return None
 
+import subprocess
+import json
+
+def get_video_date_taken(path):
+    """
+    Attempts to get the creation time from the video's metadata using ffprobe.
+    Returns the date string or None if not found.
+    """
+    try:
+        cmd = [
+            "ffprobe",
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return None
+
+        data = json.loads(result.stdout)
+
+        # Try to find creation_time in format tags
+        if "format" in data and "tags" in data["format"]:
+            if "creation_time" in data["format"]["tags"]:
+                return data["format"]["tags"]["creation_time"]
+
+        # Try to find creation_time in stream tags
+        if "streams" in data:
+            for stream in data["streams"]:
+                if "tags" in stream and "creation_time" in stream["tags"]:
+                    return stream["tags"]["creation_time"]
+
+        return None
+    except Exception:
+        return None
+
 def main():
-    parser = argparse.ArgumentParser(description="Index pictures in a directory to an SQLite database.")
+    parser = argparse.ArgumentParser(description="Index pictures and videos in a directory to an SQLite database.")
     parser.add_argument("directory", help="Path to the directory to scan")
     args = parser.parse_args()
 
@@ -79,11 +117,13 @@ def main():
         found_files = set()
 
         image_extensions = {'.jpg', '.jpeg', '.png', '.tiff', '.bmp', '.gif', '.webp'}
+        video_extensions = {'.mp4', '.mov', '.avi', '.mkv', '.3gp'}
 
         count = 0
         for root, dirs, files in os.walk(target_dir):
             for file in files:
-                if file.lower().endswith(tuple(image_extensions)):
+                ext = os.path.splitext(file)[1].lower()
+                if ext in image_extensions or ext in video_extensions:
                     full_path = os.path.join(root, file)
                     found_files.add(full_path)
 
@@ -95,7 +135,10 @@ def main():
                         continue
 
                     # Get date taken
-                    date_taken = get_date_taken(full_path)
+                    if ext in image_extensions:
+                        date_taken = get_date_taken(full_path)
+                    else:
+                        date_taken = get_video_date_taken(full_path)
 
                     cursor.execute(
                         "INSERT OR REPLACE INTO pictures (file_path, file_size, date_taken) VALUES (?, ?, ?)",
