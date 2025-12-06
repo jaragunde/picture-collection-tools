@@ -93,6 +93,14 @@ def main():
                 conn.close()
                 sys.exit(1)
 
+        # Refactoring the main loop to handle counting and aggregation
+        # We need to know the total file count and per-directory count to decide on "Other".
+        # But we filter rows based on date. So we must count AFTER filtering.
+
+        filtered_rows = []
+        dir_file_counts = {}
+        total_filtered_files = 0
+
         for date_str, size, file_path in rows:
             dt = parse_date(date_str)
             if dt:
@@ -101,13 +109,8 @@ def main():
                 if date_after_dt and dt <= date_after_dt:
                     continue
 
-                if args.group_by == "year":
-                    key = dt.strftime("%Y")
-                else:
-                    key = dt.strftime("%Y-%m")
-
+                # Determine directory
                 if args.group_dirs:
-                    # Get directory name relative to target_dir
                     try:
                         rel_dir = os.path.relpath(os.path.dirname(file_path), target_dir)
                         if rel_dir == ".":
@@ -115,25 +118,55 @@ def main():
                         else:
                             directory = rel_dir
                     except ValueError:
-                        # Fallback if paths are on different drives or something
                         directory = os.path.basename(os.path.dirname(file_path))
                 else:
                     directory = "Total"
 
-                if key not in growth_data:
-                    growth_data[key] = {}
+                filtered_rows.append((dt, size, directory))
+                dir_file_counts[directory] = dir_file_counts.get(directory, 0) + 1
+                total_filtered_files += 1
 
-                growth_data[key][directory] = growth_data[key].get(directory, 0) + size
-                all_directories.add(directory)
+        if not filtered_rows:
+             print("Could not parse any dates or no data after filtering.")
+             conn.close()
+             return
 
-        if not growth_data:
-            print("Could not parse any dates or no data after filtering.")
-            conn.close()
-            return
+        # Determine which directories are "Other"
+        other_dirs = set()
+        if args.group_dirs and total_filtered_files > 0:
+            threshold = total_filtered_files * 0.10
+            for d, count in dir_file_counts.items():
+                if count < threshold:
+                    other_dirs.add(d)
+
+        # Aggregate data
+        growth_data = {}
+        all_directories = set()
+
+        for dt, size, directory in filtered_rows:
+            if args.group_by == "year":
+                key = dt.strftime("%Y")
+            else:
+                key = dt.strftime("%Y-%m")
+
+            final_directory = directory
+            if args.group_dirs and directory in other_dirs:
+                final_directory = "Other"
+
+            if key not in growth_data:
+                growth_data[key] = {}
+
+            growth_data[key][final_directory] = growth_data[key].get(final_directory, 0) + size
+            all_directories.add(final_directory)
 
         # Sort by key (month or year)
         sorted_keys = sorted(growth_data.keys())
         sorted_directories = sorted(list(all_directories))
+
+        # Ensure "Other" is last if present
+        if "Other" in sorted_directories:
+            sorted_directories.remove("Other")
+            sorted_directories.append("Other")
 
         # Prepare data for plotting
         # We need a list of sizes for each directory, aligned with sorted_keys
