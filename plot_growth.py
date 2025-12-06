@@ -134,7 +134,7 @@ def main():
         # Determine which directories are "Other"
         other_dirs = set()
         if args.group_dirs and total_filtered_files > 0:
-            threshold = total_filtered_files * 0.10
+            threshold = total_filtered_files * 0.01
             for d, count in dir_file_counts.items():
                 if count < threshold:
                     other_dirs.add(d)
