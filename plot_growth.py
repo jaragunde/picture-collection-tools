@@ -47,6 +47,7 @@ def main():
     parser.add_argument("--group-by", choices=["month", "year"], default="month", help="Group pictures by 'month' or 'year'")
     parser.add_argument("--date-before", help="Filter pictures taken before this date (YYYY-MM-DD)")
     parser.add_argument("--date-after", help="Filter pictures taken after this date (YYYY-MM-DD)")
+    parser.add_argument("--group-dirs", action="store_true", help="Group pictures by directory (stacked bar chart)")
     args = parser.parse_args()
 
     target_dir = os.path.abspath(args.directory)
@@ -105,19 +106,19 @@ def main():
                 else:
                     key = dt.strftime("%Y-%m")
 
-                # Get directory name relative to target_dir
-                # If file_path is absolute and inside target_dir, relpath works.
-                # If file_path is absolute but somehow not inside (symlinks?), might be weird.
-                # Assuming standard usage where indexer stores absolute paths.
-                try:
-                    rel_dir = os.path.relpath(os.path.dirname(file_path), target_dir)
-                    if rel_dir == ".":
-                        directory = "Root"
-                    else:
-                        directory = rel_dir
-                except ValueError:
-                    # Fallback if paths are on different drives or something
-                    directory = os.path.basename(os.path.dirname(file_path))
+                if args.group_dirs:
+                    # Get directory name relative to target_dir
+                    try:
+                        rel_dir = os.path.relpath(os.path.dirname(file_path), target_dir)
+                        if rel_dir == ".":
+                            directory = "Root"
+                        else:
+                            directory = rel_dir
+                    except ValueError:
+                        # Fallback if paths are on different drives or something
+                        directory = os.path.basename(os.path.dirname(file_path))
+                else:
+                    directory = "Total"
 
                 if key not in growth_data:
                     growth_data[key] = {}
@@ -163,21 +164,26 @@ def main():
             label = "Year" if args.group_by == "year" else "Month"
 
             # Helper to plot stacked bars
-            def plot_stacked(data_dict, title, ylabel, filename):
+            def plot_chart(data_dict, title, ylabel, filename):
                 plt.figure(figsize=(12, 6))
 
                 bottom = np.zeros(len(sorted_keys))
 
-                for d in sorted_directories:
-                    values = data_dict[d]
-                    plt.bar(sorted_keys, values, bottom=bottom, label=d)
-                    bottom += np.array(values)
+                if args.group_dirs:
+                    for d in sorted_directories:
+                        values = data_dict[d]
+                        plt.bar(sorted_keys, values, bottom=bottom, label=d)
+                        bottom += np.array(values)
+                    plt.legend(title="Directory", bbox_to_anchor=(1.05, 1), loc='upper left')
+                else:
+                    # Single series (Total)
+                    values = data_dict["Total"]
+                    plt.bar(sorted_keys, values, color='skyblue' if 'Growth' in title else 'lightgreen')
 
                 plt.xlabel(label)
                 plt.ylabel(ylabel)
                 plt.title(title)
                 plt.xticks(rotation=45, ha='right')
-                plt.legend(title="Directory", bbox_to_anchor=(1.05, 1), loc='upper left')
                 plt.tight_layout()
 
                 output_path = os.path.join(target_dir, filename)
@@ -185,10 +191,10 @@ def main():
                 print(f"Chart saved to: {output_path}")
 
             # Chart 1: Cumulative Growth
-            plot_stacked(cumulative_data, "Picture Collection Growth Over Time", "Collection Size (MB)", "collection_growth.png")
+            plot_chart(cumulative_data, "Picture Collection Growth Over Time", "Collection Size (MB)", "collection_growth.png")
 
             # Chart 2: Periodic Size
-            plot_stacked(periodic_data, f"{label}ly Picture Collection Size", f"{label}ly Size (MB)", "collection_monthly_size.png")
+            plot_chart(periodic_data, f"{label}ly Picture Collection Size", f"{label}ly Size (MB)", "collection_monthly_size.png")
 
         except ImportError:
             print("matplotlib not installed. Skipping chart generation.")
