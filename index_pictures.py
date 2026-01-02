@@ -27,10 +27,36 @@ from PIL import Image, ExifTags
 
 def get_date_taken(path):
     """
-    Attempts to get the date taken from the image's EXIF data.
+    Attempts to get the date taken from a sidecar JSON file or the image's EXIF data.
     Returns the date string or None if not found.
     """
     try:
+        # 1. Check for JSON sidecar
+        # Potential paths:
+        #   /path/to/image.json
+        #   /path/to/metadata/image.json
+
+        base_path = os.path.splitext(path)[0]
+        json_paths = [
+            base_path + ".json",
+            os.path.join(os.path.dirname(path), "metadata", os.path.basename(base_path) + ".json")
+        ]
+
+        for json_path in json_paths:
+            if os.path.exists(json_path):
+                try:
+                    with open(json_path, 'r') as f:
+                        data = json.load(f)
+                        if "creationTime" in data and "timestamp" in data["creationTime"]:
+                            # Expected timestamp is likely unix timestamp (int or float)
+                            ts = float(data["creationTime"]["timestamp"])
+                            # Convert to EXIF standard format: "YYYY:MM:DD HH:MM:SS"
+                            return datetime.fromtimestamp(ts).strftime("%Y:%m:%d %H:%M:%S")
+                except Exception as e:
+                    print(f"Error reading sidecar {json_path}: {e}")
+                    # Continue to checks
+
+        # 2. Exif Check
         with Image.open(path) as img:
             exif = img.getexif()
             if not exif:
