@@ -38,7 +38,9 @@ def get_date_taken(path):
 
         base_path = os.path.splitext(path)[0]
         json_paths = [
+            path + ".json",
             base_path + ".json",
+            os.path.join(os.path.dirname(path), "metadata", os.path.basename(path) + ".json"),
             os.path.join(os.path.dirname(path), "metadata", os.path.basename(base_path) + ".json")
         ]
 
