@@ -25,13 +25,12 @@ import argparse
 from datetime import datetime
 from PIL import Image, ExifTags
 
-def get_date_taken(path):
+def get_sidecar_date(path):
     """
-    Attempts to get the date taken from a sidecar JSON file or the image's EXIF data.
-    Returns the date string or None if not found.
+    Attempts to get the date taken from a sidecar JSON file.
+    Returns the date string (YYYY:MM:DD HH:MM:SS) or None if not found.
     """
     try:
-        # 1. Check for JSON sidecar
         # Potential paths:
         #   /path/to/image.json
         #   /path/to/metadata/image.json
@@ -57,7 +56,21 @@ def get_date_taken(path):
                 except Exception as e:
                     print(f"Error reading sidecar {json_path}: {e}")
                     # Continue to checks
+        return None
+    except Exception:
+        return None
 
+def get_date_taken(path):
+    """
+    Attempts to get the date taken from a sidecar JSON file or the image's EXIF data.
+    Returns the date string or None if not found.
+    """
+    # 1. Check for JSON sidecar
+    sidecar_date = get_sidecar_date(path)
+    if sidecar_date:
+        return sidecar_date
+
+    try:
         # 2. Exif Check
         with Image.open(path) as img:
             exif = img.getexif()
@@ -79,9 +92,13 @@ import json
 
 def get_video_date_taken(path):
     """
-    Attempts to get the creation time from the video's metadata using ffprobe.
+    Attempts to get the creation time from a sidecar JSON file or the video's metadata using ffprobe.
     Returns the date string or None if not found.
     """
+    sidecar_date = get_sidecar_date(path)
+    if sidecar_date:
+        return sidecar_date
+
     try:
         cmd = [
             "ffprobe",
